@@ -356,9 +356,10 @@ show();
 const root=document.getElementById('paperExecutionEngine'),panel=document.getElementById('paperAutomation');
 if(panel)panel.after(root);const footer=document.querySelector('body>footer');if(footer)footer.before(root);
 const $=id=>document.getElementById(id),key='fomo_isolated_execution_v1';
-const initial=()=>({cash:20,realized:0,position:null,journal:[]});
+const initial=()=>({cash:20,realized:0,position:null,journal:[],blockedDecisions:[]});
 let state;try{state=JSON.parse(localStorage.getItem(key))}catch(_){}
 if(!state||!Number.isFinite(state.cash)||!Array.isArray(state.journal))state=initial();
+if(!Array.isArray(state.blockedDecisions))state.blockedDecisions=[];
 const fee=.001,slip=.001,fmt=n=>String.fromCharCode(36)+Number(n).toFixed(2);
 function save(){try{localStorage.setItem(key,JSON.stringify(state))}catch(_){}}
 function render(){
@@ -377,12 +378,34 @@ let monitoring=false;const monitor=$('engineMonitor');
 const gate=document.createElement('section');gate.className='card';gate.id='engineAgentGate';
 gate.innerHTML='<h3>Agent-to-Execution Safety Gate</h3><p id="engineGateStatus" role="status">Waiting for scanner and council results. Autonomous entries disabled.</p><p>Mandatory checks: verified executable bid/ask, exchange fees, order-book liquidity, position limits, and daily drawdown. An agent vote cannot override missing safety data.</p>';
 root.querySelector('.card')?.append(gate);
+const rulesBox=document.createElement('div');rulesBox.id='engineEightRules';rulesBox.innerHTML='<h3>Eight-rule entry gate (fail closed)</h3><label for="engineTradeReason">Written trade rationale (required)</label><textarea id="engineTradeReason" rows="3" style="width:100%;background:#203750;color:#edf4ff;border:1px solid #3b5672;border-radius:9px;padding:10px" placeholder="Evidence and reasons for this trade"></textarea><label for="engineStopPrice">Predetermined stop-loss price (required; below entry for long positions)</label><input id="engineStopPrice" type="number" min="0" step="any" placeholder="Stop price"><p id="engineRuleStatus" role="status">Entries blocked until every rule passes. Unverified pump screening and agent consensus always block entry.</p><p>Existing positions are not modified. Rejected attempts are retained in a separate local audit journal.</p><div id="engineRuleAudit"></div>';
+gate.append(rulesBox);
 // Portfolio safeguards apply to manual paper entries and to any future automatic entry path.
 const riskConfig=Object.freeze({startingCapital:20,maxPositionNotional:10,maxOpenPositions:1,maxDailyRealizedLoss:0.60,minCashReserve:5});
 const riskPanel=document.createElement('p');riskPanel.id='enginePortfolioRisk';riskPanel.setAttribute('role','status');gate.append(riskPanel);
 function realizedToday(){
  const today=new Date().toDateString();
  return state.journal.filter(row=>row.action!=='OPEN TEST'&&row.pnl<0&&new Date(row.time).toDateString()===today).reduce((sum,row)=>sum+row.pnl,0);
+}
+function equity(){return state.cash+(state.position?state.position.notional:0)}
+function blockEntry(reasons,symbol){
+ const record={time:new Date().toISOString(),symbol:symbol||'UNKNOWN',action:'BLOCKED ENTRY',reasons:[...reasons]};
+ state.blockedDecisions.push(record);save();
+ const audit=$('engineRuleAudit');audit.textContent='Last blocked entry: '+record.time+' · '+record.symbol+' · '+record.reasons.join('; ');
+ message('Entry blocked: '+reasons.join('; ')+'.');
+}
+function ruleCheck({symbol,price,stop,reason,notional,consensus,pumpClear}){
+ const failures=riskCheck(notional);
+ if(state.position)failures.push('rule 1: existing position');
+ const maxLoss=equity()*.01,plannedLoss=Number.isFinite(stop)&&stop>0&&stop<price ? notional*(price-stop)/price+notional*2*(fee+slip) : Infinity;
+ if(!(plannedLoss<=maxLoss))failures.push('rule 2: stop-based planned loss including estimated costs exceeds 1% of equity');
+ if(!(stop>0&&stop<price))failures.push('rule 3: valid predetermined stop required');
+ if(realizedToday()<0&&plannedLoss>maxLoss)failures.push('rule 4: no increased risk after loss');
+ if(pumpClear!==true)failures.push('rule 5: pump avoidance not verified');
+ if(!Array.isArray(state.journal)||!Array.isArray(state.blockedDecisions))failures.push('rule 6: auditable journal unavailable');
+ if(typeof reason!=='string'||reason.trim().length<12)failures.push('rule 7: written trade reason required (12+ characters)');
+ if(consensus!==true)failures.push('rule 8: unanimous verified agent approval missing');
+ return [...new Set(failures)];
 }
 function riskCheck(notional){
  const reasons=[];
@@ -445,11 +468,11 @@ $('engineOpen').addEventListener('click',async()=>{
  if(openButton.disabled)return;
  openButton.disabled=true;
  try {
- if(state.position)return message('Close the existing position first.');
+ if(state.position)return blockEntry(['rule 1: maximum one open position'], $('engineSymbol').value);
  const symbol=$('engineSymbol').value,price=Number($('enginePrice').value);
  if(!symbol||!(price>0)||!Number.isFinite(price))return message('Choose a coin and enter a valid illustrative price.');
  if(symbol!=='TESTUSDT'){
-  if(!candidateSymbols.includes(symbol))return message('Entry blocked: selected coin is not in the latest scanner shortlist.');
+  if(!candidateSymbols.includes(symbol))return blockEntry(['symbol absent from latest scanner shortlist'],symbol);
   try{
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);
    let response;try{response=await fetch('https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol='+encodeURIComponent(symbol),{cache:'no-store',signal:controller.signal})}finally{clearTimeout(timer)}
@@ -460,12 +483,15 @@ $('engineOpen').addEventListener('click',async()=>{
    if(deviation>.05)return message('Entry blocked: '+symbol+' entered '+price+' differs from indicative midpoint '+midpoint.toFixed(6)+' by '+(deviation*100).toFixed(2)+'% (5% maximum).');
   }catch(err){return message('Entry blocked: unable to validate live market price ('+err.message+').')}
  }
- const notional=Math.min(riskConfig.maxPositionNotional,state.cash/(1+fee+slip),.2/.02);
- const violations=riskCheck(notional);if(violations.length)return message('Entry blocked: '+violations.join('; ')+'.');
+ const notional=Math.min(riskConfig.maxPositionNotional,state.cash/(1+fee+slip),equity()*.01/.024);
+ const stop=Number($('engineStopPrice').value),reason=$('engineTradeReason').value.trim();
+ // Current six-agent desk is research-only and supplies no authenticated unanimous approval or verified pump-clear signal.
+ const violations=ruleCheck({symbol,price,stop,reason,notional,consensus:false,pumpClear:false});
+ if(violations.length)return blockEntry(violations,symbol);
  const entry=price*(1+slip),qty=notional/entry,total=notional*(1+fee);
  if(total>state.cash+1e-8)return message('Insufficient cash.');
- state.cash-=total;state.position={symbol,entry,qty,notional,stop:entry*.98,target:entry*1.04,autoEligible:symbol!=='TESTUSDT'&&$('engineAutoExit').checked};
- state.journal.push({time:new Date().toLocaleString(),symbol,action:'OPEN TEST',price:entry,notional,pnl:0});
+ state.cash-=total;state.position={symbol,entry,qty,notional,stop,target:entry+2*(entry-stop),reason,autoEligible:symbol!=='TESTUSDT'&&$('engineAutoExit').checked};
+ state.journal.push({time:new Date().toLocaleString(),symbol,action:'OPEN TEST',price:entry,notional,pnl:0,reason,stop});
  save();render();renderPortfolioRisk();message('Test position opened. Stop '+state.position.stop.toPrecision(7)+'; target '+state.position.target.toPrecision(7)+'. Stops are informational only; no background execution.');
  } finally {if(!state.position)openButton.disabled=false;}
 });
