@@ -130,4 +130,41 @@ button.addEventListener('click',scan);setInterval(()=>{if(!document.hidden)scan(
 })();
 </script>
 <footer style="border-top:1px solid #26374c;margin-top:24px;text-align:center"><div style="font-size:13px;color:#edf4ff;margin-bottom:8px">© 2026 Ayushman Adhikary · Created & Developed by Ayushman Adhikary</div><div>Local browser storage retains this device's simulated journal. No real trading, guaranteed returns, or investment advice. Daily limits use the device's local calendar day.</div></footer>
+
+<style>
+#unifiedDashboard{max-width:1200px;margin:0 auto;padding:14px 20px 28px}
+#unifiedDashboard .dashboard-head{background:linear-gradient(115deg,#17334b,#12253a);border:1px solid #31506b;border-radius:16px;padding:20px;margin-bottom:16px}
+#unifiedDashboard .dashboard-head h2{font-size:23px;margin:0 0 8px}
+#unifiedDashboard .dashboard-head p{margin:0}
+#unifiedDashboard .dashboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+#unifiedDashboard .dashboard-grid>section{max-width:none!important;margin:0!important;padding:0!important;min-width:0}
+#unifiedDashboard .dashboard-grid>section>.card{height:100%;min-width:0}
+#unifiedDashboard #fomoCharts svg{max-width:100%;height:auto}
+#unifiedDashboard .dashboard-grid>section:nth-child(2){grid-column:1/-1}
+#legacyLab{max-width:1200px;margin:0 auto 24px;padding:0 20px}
+#legacyLab>summary{border:1px solid #344e68;background:#14243a;padding:15px;border-radius:12px;font-weight:650;list-style-position:inside}
+#legacyLab>main{max-width:none;padding:12px 0}
+@media(max-width:850px){#unifiedDashboard .dashboard-grid{grid-template-columns:minmax(0,1fr)}#unifiedDashboard .dashboard-grid>section:nth-child(2){grid-column:auto}#unifiedDashboard{padding:12px}}
+</style>
+<script>
+(function(){
+ const main=document.querySelector('body>main');
+ const footer=document.querySelector('body>footer');
+ if(!main||!footer||document.getElementById('unifiedDashboard'))return;
+ const sectionFor=id=>document.getElementById(id)?.closest('section');
+ const ids=['scanResults','fomoCharts','v5signals','councilResults'];
+ const sections=ids.map(sectionFor);
+ if(sections.some(s=>!s))return;
+ const dashboard=document.createElement('div');dashboard.id='unifiedDashboard';
+ const heading=document.createElement('div');heading.className='dashboard-head';
+ heading.innerHTML='<h2>Live research dashboard</h2><p>Automatic market scanning, completed-candle charts, technical signals, and eight-market agent review every five minutes while this page stays open. Research and paper simulation only; no automatic trade execution.</p>';
+ const grid=document.createElement('div');grid.className='dashboard-grid';
+ sections.forEach(s=>grid.appendChild(s));
+ dashboard.append(heading,grid);
+ main.parentNode.insertBefore(dashboard,main);
+ const legacy=document.createElement('details');legacy.id='legacyLab';
+ const summary=document.createElement('summary');summary.textContent='Portfolio, risk controls, paper journal & advanced research tools (expand)';
+ legacy.appendChild(summary);main.parentNode.insertBefore(legacy,main);legacy.appendChild(main);
+})();
+</script>
 </body></html>
