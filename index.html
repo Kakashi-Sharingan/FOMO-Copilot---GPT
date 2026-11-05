@@ -379,6 +379,16 @@ window.addEventListener('fomo:analysis',e=>{
  select.replaceChildren();names.forEach((symbol,i)=>{const o=document.createElement('option');o.value=symbol;o.textContent=symbol;select.append(o)});
  if(names.includes(selected))select.value=selected;
 });
+// Autonomous entry readiness is intentionally fail-closed until independently verified.
+const gate=document.createElement('section');gate.className='card';gate.id='engineAgentGate';
+gate.innerHTML='<h3>Agent-to-Execution Safety Gate</h3><p id="engineGateStatus" role="status">Waiting for scanner and council results. Autonomous entries disabled.</p><p>Mandatory checks: verified executable bid/ask, exchange fees, order-book liquidity, position limits, and daily drawdown. An agent vote cannot override missing safety data.</p>';
+root.querySelector('.card')?.append(gate);
+let candidateSymbols=[];
+window.addEventListener('fomo:analysis',e=>{
+ candidateSymbols=(e.detail?.symbols||[]).filter(x=>/^[A-Z0-9]{2,20}USDT$/.test(x)&&x!=='TESTUSDT').slice(0,8);
+ const blocked=candidateSymbols.length;
+ $('engineGateStatus').textContent='Candidates received: '+blocked+' · approved for automatic entry: 0 · blocked: '+blocked+'. Execution-cost and liquidity verification are not yet connected; no automatic entries will occur.';
+});
 $('engineOpen').addEventListener('click',()=>{
  if(state.position)return message('Close the existing position first.');
  const symbol=$('engineSymbol').value,price=Number($('enginePrice').value);
