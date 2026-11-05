@@ -401,13 +401,99 @@ async function assessLiquidity(){
    if(!(bid>0&&ask>=bid&&mid>0))throw Error('Invalid bid/ask');
    const spreadPct=(ask-bid)/mid*100;
    const bidDepth=bids.reduce((s,[p,q])=>s+p*q,0),askDepth=asks.reduce((s,[p,q])=>s+p*q,0);
+   // Conservative research-only assumptions; exchange-specific fees are NOT verified.
+   const assumedFeePerSidePct=0.10,assumedSlippagePerSidePct=0.10;
+   const costEstimatePct=spreadPct+2*assumedFeePerSidePct+2*assumedSlippagePerSidePct;
+   const assumedRoundTripCostOn10=10*costEstimatePct/100;
    const passed=spreadPct<=.25&&bidDepth>=10000&&askDepth>=10000;
-   results.push({symbol,spreadPct,bidDepth,askDepth,passed,reason:passed?'Indicative spread/depth passed':'Spread or depth below research threshold'});
+   results.push({symbol,spreadPct,bidDepth,askDepth,costEstimatePct,assumedRoundTripCostOn10,passed,reason:passed?'Indicative spread/depth passed':'Spread or depth below research threshold'});
   }catch(err){results.push({symbol,passed:false,reason:err.message})}
  }
  liquidityBox.replaceChildren();
- const heading=document.createElement('p');heading.textContent='Indicative order-book screening (20 levels; spread ≤0.25%, each side ≥10,000 USDT). Not proof of executable liquidity.';liquidityBox.append(heading);
- results.forEach(x=>{const p=document.createElement('p');p.textContent=x.symbol+' · '+(x.passed?'SCREEN PASS':'BLOCKED')+(Number.isFinite(x.spreadPct)?' · spread '+x.spreadPct.toFixed(3)+'% · bid depth '+x.bidDepth.toFixed(0)+' USDT · ask depth '+x.askDepth.toFixed(0)+' USDT':'')+' · '+x.reason;liquidityBox.append(p)});
+ const heading=document.createElement('p');heading.textContent='Indicative order-book screening (20 levels; spread ≤0.25%, each side ≥10,000 USDT). Research-only round-trip cost model = spread + 0.10% fee per side + 0.10% slippage per side. Fees and slippage are assumptions, NOT verified exchange costs; automatic entries remain disabled.';liquidityBox.append(heading);
+ results.forEach(x=>{const p=document.createElement('p');p.textContent=x.symbol+' · '+(x.passed?'SCREEN PASS':'BLOCKED')+(Number.isFinite(x.spreadPct)?' · spread '+x.spreadPct.toFixed(3)+'% · bid depth '+x.bidDepth.toFixed(0)+' USDT · ask depth '+x.askDepth.toFixed(0)+' USDT':'')+(Number.isFinite(x.costEstimatePct)?' · estimated round-trip cost '+x.costEstimatePct.toFixed(3)+'% (~});
+ const passed=results.filter(x=>x.passed).length;
+ $('engineGateStatus').textContent='Markets screened: '+results.length+' · indicative spread/depth passes: '+passed+' · approved for automatic entry: 0. Fees, executable costs, council approval and drawdown controls are not yet verified; automatic entries remain disabled.';
+ liquidityBusy=false;
+}
+window.addEventListener('fomo:analysis',e=>{
+ candidateSymbols=(e.detail?.symbols||[]).filter(x=>/^[A-Z0-9]{2,20}USDT$/.test(x)&&x!=='TESTUSDT').slice(0,8);
+ $('engineGateStatus').textContent='Received '+candidateSymbols.length+' candidates. Screening indicative spread and depth; automatic entries disabled.';
+ assessLiquidity();
+});
+setInterval(assessLiquidity,300000);
+$('engineOpen').addEventListener('click',()=>{
+ if(state.position)return message('Close the existing position first.');
+ const symbol=$('engineSymbol').value,price=Number($('enginePrice').value);
+ if(!symbol||!(price>0)||!Number.isFinite(price))return message('Choose a coin and enter a valid illustrative price.');
+ const notional=Math.min(10,state.cash/(1+fee+slip),.2/.02);
+ if(notional<1)return message('Insufficient cash for a test position.');
+ const entry=price*(1+slip),qty=notional/entry,total=notional*(1+fee);
+ if(total>state.cash+1e-8)return message('Insufficient cash.');
+ state.cash-=total;state.position={symbol,entry,qty,notional,stop:entry*.98,target:entry*1.04,autoEligible:symbol!=='TESTUSDT'&&$('engineAutoExit').checked};
+ state.journal.push({time:new Date().toLocaleString(),symbol,action:'OPEN TEST',price:entry,notional,pnl:0});
+ save();render();message('Test position opened. Stop '+state.position.stop.toPrecision(7)+'; target '+state.position.target.toPrecision(7)+'. Stops are informational only; no background execution.');
+});
+$('engineClose').addEventListener('click',()=>{
+ const p=state.position,price=Number($('engineExit').value);
+ if(!p)return message('No open position.');
+ if(!(price>0)||!Number.isFinite(price))return message('Enter a valid illustrative exit price.');
+ const exit=price*(1-slip),proceeds=p.qty*exit*(1-fee),pnl=proceeds-p.notional*(1+fee);
+ state.cash+=proceeds;state.realized+=pnl;
+ state.journal.push({time:new Date().toLocaleString(),symbol:p.symbol,action:'CLOSE TEST',price:exit,notional:p.notional,pnl});
+ state.position=null;save();render();message('Simulated position closed. Realized '+fmt(pnl)+'.');
+});
+async function checkAutomaticExit(){
+ const p=state.position;
+ if(monitoring||!p||!p.autoEligible||!$('engineAutoExit').checked||document.hidden||!navigator.onLine)return;
+ if(!/^[A-Z0-9]{2,20}USDT$/.test(p.symbol)||p.symbol==='TESTUSDT')return;
+ monitoring=true;
+ try{
+  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),6000);
+  let quote;try{
+   const response=await fetch('https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol='+encodeURIComponent(p.symbol),{cache:'no-store',signal:ctl.signal});
+   if(!response.ok)throw Error('Market quote unavailable');
+   quote=await response.json();
+  }finally{clearTimeout(timer)}
+  const bid=Number(quote.bidPrice),ask=Number(quote.askPrice);
+  if(!(bid>0&&ask>=bid))throw Error('Invalid market quote');
+  const spread=(ask-bid)/((ask+bid)/2);
+  if(spread>.01)throw Error('Spread above 1%; simulated execution paused');
+  if(state.position!==p)return;
+  try {
+   const k='fomo_price_check_history_v1';
+   const old=JSON.parse(localStorage.getItem(k)||'[]');
+   const history=Array.isArray(old)?old:[];
+   history.push({time:new Date().toISOString(),symbol:p.symbol,bid,stop:p.stop,target:p.target,trigger:bid<=p.stop?'stop':bid>=p.target?'target':'none'});
+   localStorage.setItem(k,JSON.stringify(history.slice(-120)));
+  } catch (_) { /* Storage failures must not interrupt simulated exit checks. */ }
+  const historyBox=document.getElementById('monitorHistoryRows');
+  if(historyBox){try{const rows=JSON.parse(localStorage.getItem('fomo_price_check_history_v1')||'[]');historyBox.replaceChildren();rows.slice(-30).reverse().forEach(x=>{const line=document.createElement('p');line.textContent=x.time+' | '+x.symbol+' | bid '+x.bid+' | stop '+x.stop+' | target '+x.target+' | '+x.trigger;historyBox.append(line)})}catch(_){historyBox.textContent='History unavailable in this browser.'}}
+  monitor.textContent='Last indicative bid '+bid.toPrecision(8)+' · stop '+p.stop.toPrecision(8)+' · target '+p.target.toPrecision(8)+' · checked '+new Date().toLocaleTimeString();
+  if(bid<=p.stop||bid>=p.target){
+   const exit=bid*(1-slip),proceeds=p.qty*exit*(1-fee),pnl=proceeds-p.notional*(1+fee);
+   state.cash+=proceeds;state.realized+=pnl;
+   state.journal.push({time:new Date().toLocaleString(),symbol:p.symbol,action:bid<=p.stop?'AUTO STOP TEST':'AUTO TARGET TEST',price:exit,notional:p.notional,pnl});
+   state.position=null;save();render();
+   const exitNote=document.getElementById('engineExitNote');if(exitNote){exitNote.classList.remove('paper-state-waiting');exitNote.classList.add('paper-state-alert');exitNote.textContent='Automatic exit: '+p.symbol+' · '+(bid<=p.stop?'STOP LOSS':'TAKE PROFIT')+' · price '+exit.toPrecision(8)+' · realized '+fmt(pnl)+' · '+new Date().toLocaleString();}
+   message('Simulated automatic exit triggered at indicative bid. Realized '+fmt(pnl)+'. Market gaps may exceed stop.');
+  }
+ }catch(err){monitor.textContent='Automatic exit monitoring unavailable: '+err.message+'; no execution attempted.'}
+ finally{monitoring=false}
+}
+$('engineAutoExit').addEventListener('change',()=>{
+ if(state.position)state.position.autoEligible=state.position.symbol!=='TESTUSDT'&&$('engineAutoExit').checked;
+ save();
+ monitor.textContent=$('engineAutoExit').checked?'Monitoring enabled for eligible market-priced positions while page is open. Entries remain manual.':'Automatic exits disabled.';
+ if($('engineAutoExit').checked)checkAutomaticExit();
+});
+setInterval(checkAutomaticExit,15000);
+$('engineReset').addEventListener('click',()=>{if(!confirm('Reset this separate $20 test simulator and its journal?'))return;state=initial();save();render();message('Isolated simulator reset.')});
+render();
+try{const rows=JSON.parse(localStorage.getItem('fomo_price_check_history_v1')||'[]');const box=document.getElementById('monitorHistoryRows');if(box&&rows.length){box.replaceChildren();rows.slice(-30).reverse().forEach(x=>{const p=document.createElement('p');p.textContent=x.time+' | '+x.symbol+' | bid '+x.bid+' | stop '+x.stop+' | target '+x.target+' | '+x.trigger;box.append(p)})}}catch(_){}
+})();
+</script>
+</body></html>+x.assumedRoundTripCostOn10.toFixed(4)+' on $10)':'')+' · '+x.reason;liquidityBox.append(p)});
  const passed=results.filter(x=>x.passed).length;
  $('engineGateStatus').textContent='Markets screened: '+results.length+' · indicative spread/depth passes: '+passed+' · approved for automatic entry: 0. Fees, executable costs, council approval and drawdown controls are not yet verified; automatic entries remain disabled.';
  liquidityBusy=false;
