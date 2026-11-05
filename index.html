@@ -349,12 +349,12 @@ show();
 <script>
 (function(){
 const root=document.getElementById('paperExecutionEngine'),panel=document.getElementById('paperAutomation');
-if(panel)panel.after(root);
+if(panel)panel.after(root);const footer=document.querySelector('body>footer');if(footer)footer.before(root);
 const $=id=>document.getElementById(id),key='fomo_isolated_execution_v1';
 const initial=()=>({cash:20,realized:0,position:null,journal:[]});
 let state;try{state=JSON.parse(localStorage.getItem(key))}catch(_){}
 if(!state||!Number.isFinite(state.cash)||!Array.isArray(state.journal))state=initial();
-const fee=.001,slip=.001,fmt=n=>';
+const fee=.001,slip=.001,fmt=n=>String.fromCharCode(36)+Number(n).toFixed(2);
 function save(){try{localStorage.setItem(key,JSON.stringify(state))}catch(_){}}
 function render(){
  $('engineCash').textContent=fmt(state.cash);
