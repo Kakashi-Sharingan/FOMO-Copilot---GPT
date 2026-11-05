@@ -344,7 +344,7 @@ show();
 <p class="signal-note">Assumed fee: 0.10% per side; assumed slippage: 0.10% per side. These are simulation inputs, not verified costs. Position notional is capped at $10 and available cash. One position maximum.</p>
 <div class="row"><button id="engineOpen" type="button">Open simulated test position</button><button id="engineClose" type="button">Close at entered exit price</button><button id="engineReset" type="button">Reset isolated simulator</button></div>
 <label><input id="engineAutoExit" type="checkbox" style="width:auto"> Enable automatic simulated stop-loss / take-profit monitoring for market-priced positions (while page is open)</label><p id="engineMonitor" class="signal-note">Automatic exits off. TESTUSDT uses manual test prices only. Agent-driven entries remain blocked pending safety verification.</p><p id="engineStatus" class="signal-note" aria-live="polite">No simulated orders entered.</p>
-<div id="monitorHistoryPanel" class="engine-scroll" style="max-height:220px;overflow:auto"><h3>Monitoring History</h3><p id="monitorHistoryRows">Waiting for saved price checks.</p></div><div class="engine-scroll"><table><thead><tr><th>Time</th><th>Coin</th><th>Action</th><th>Price</th><th>Notional</th><th>Realized P&amp;L</th></tr></thead><tbody id="engineJournal"></tbody></table></div>
+<p id="engineExitNote" class="signal-note" aria-live="polite">No automatic exit triggered yet.</p><div id="monitorHistoryPanel" class="engine-scroll" style="max-height:220px;overflow:auto"><h3>Monitoring History</h3><p id="monitorHistoryRows">Waiting for saved price checks.</p></div><div class="engine-scroll"><table><thead><tr><th>Time</th><th>Coin</th><th>Action</th><th>Price</th><th>Notional</th><th>Realized P&amp;L</th></tr></thead><tbody id="engineJournal"></tbody></table></div>
 </div></section>
 <script>
 (function(){
@@ -427,6 +427,7 @@ async function checkAutomaticExit(){
    state.cash+=proceeds;state.realized+=pnl;
    state.journal.push({time:new Date().toLocaleString(),symbol:p.symbol,action:bid<=p.stop?'AUTO STOP TEST':'AUTO TARGET TEST',price:exit,notional:p.notional,pnl});
    state.position=null;save();render();
+   const exitNote=document.getElementById('engineExitNote');if(exitNote){exitNote.textContent='Automatic exit: '+p.symbol+' · '+(bid<=p.stop?'STOP LOSS':'TAKE PROFIT')+' · price '+exit.toPrecision(8)+' · realized '+fmt(pnl)+' · '+new Date().toLocaleString();}
    message('Simulated automatic exit triggered at indicative bid. Realized '+fmt(pnl)+'. Market gaps may exceed stop.');
   }
  }catch(err){monitor.textContent='Automatic exit monitoring unavailable: '+err.message+'; no execution attempted.'}
