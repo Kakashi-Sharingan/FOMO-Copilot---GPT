@@ -51,7 +51,7 @@ const rsi=(values,n=14)=>{if(values.length<=n)return NaN;let gain=0,loss=0;for(l
 function analyze(raw){const now=Date.now();const bars=raw.map(x=>({t:+x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4],v:+x[5],end:+x[6]})).filter(x=>x.end<now&&[x.o,x.h,x.l,x.c,x.v].every(Number.isFinite));if(bars.length<90)throw Error('Insufficient completed candles');const c=bars.map(x=>x.c),v=bars.map(x=>x.v),e9=ema(c,9),e21=ema(c,21),e50=ema(c,50),m=ema(c,12).map((x,i)=>x-ema(c,26)[i]),sig=ema(m,9);const i=c.length-1,prev=i-1,rv=v[i]/(v.slice(i-20,i).reduce((a,b)=>a+b,0)/20),r=rsi(c),bull=e9[i]>e21[i]&&c[i]>e50[i],bear=e9[i]<e21[i]&&c[i]<e50[i],up=e9[prev]<=e21[prev]&&e9[i]>e21[i],down=e9[prev]>=e21[prev]&&e9[i]<e21[i];const momentum=m[i]>sig[i]&&m[i]>m[prev];let score=[bull,r>50&&r<70,momentum,rv>=1.2,c[i]>e9[i]].filter(Boolean).length;let label=up&&score>=4?'BULLISH SETUP':down&&bear?'BEARISH SETUP':bull&&score>=4?'UPTREND WATCH':'WAIT / NO TRADE';return {label,price:c[i],r,rv,score,trend:bull?'Bullish':bear?'Bearish':'Mixed',macd:m[i]-sig[i],time:bars[i].end,high:bars[i].h,low:bars[i].l}};
 const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:3});
 async function get(symbol){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),11000);try{const url='https://data-api.binance.vision/api/v3/klines?symbol='+symbol+'&interval=15m&limit=150';const resp=await fetch(url,{signal:controller.signal,cache:'no-store'});if(!resp.ok)throw Error('HTTP '+resp.status);const raw=await resp.json();const result=analyze(raw);result.chartBars=raw.map(x=>({t:+x[0],o:+x[1],h:+x[2],l:+x[3],c:+x[4],end:+x[6]})).filter(x=>x.end<Date.now()&&[x.o,x.h,x.l,x.c].every(Number.isFinite)).slice(-72);return result}finally{clearTimeout(timeout)}}
-window.fomoReviewMarkets=async function(selected){const settled=await Promise.allSettled(selected.map(get));window.dispatchEvent(new CustomEvent('fomo:analysis',{detail:{symbols:selected,results:settled.map(x=>x.status==='fulfilled'?{ok:true,data:x.value}:{ok:false,error:String(x.reason?.message||x.reason)})}}));};
+window.addEventListener('fomo:analysis',event=>{window.fomoLatestAnalysis=event.detail;}); window.fomoReviewMarkets=async function(selected){const settled=await Promise.allSettled(selected.map(get));window.dispatchEvent(new CustomEvent('fomo:analysis',{detail:{symbols:selected,results:settled.map(x=>x.status==='fulfilled'?{ok:true,data:x.value}:{ok:false,error:String(x.reason?.message||x.reason)})}}));};
 let busy=false;
 async function refresh(){if(busy)return;busy=true;$v('v5status').textContent='FETCHING';$v('v5error').textContent='';$v('v5refresh').disabled=true;
 const results=await Promise.allSettled(symbols.map(get));$v('v5signals').replaceChildren();
@@ -452,7 +452,7 @@ async function assessLiquidity(){
  $('engineGateStatus').textContent='Markets screened: '+results.length+' · indicative spread/depth passes: '+passed+' · approved for automatic entry: 0. Fees, executable costs, council approval and drawdown controls are not yet verified; automatic entries remain disabled.';
  liquidityBusy=false;
 }
-window.addEventListener('fomo:analysis',e=>{
+const updateSimulatorCandidates=e=>{
  candidateSymbols=(e.detail?.symbols||[]).filter(x=>/^[A-Z0-9]{2,20}USDT$/.test(x)&&x!=='TESTUSDT').slice(0,8);
  const selector=$('engineSymbol'),previous=selector.value;
  selector.replaceChildren();
@@ -461,7 +461,9 @@ window.addEventListener('fomo:analysis',e=>{
  if([...selector.options].some(option=>option.value===previous))selector.value=previous;
  $('engineGateStatus').textContent='Received '+candidateSymbols.length+' candidates. Screening indicative spread and depth; automatic entries disabled.';
  assessLiquidity();
-});
+};
+window.addEventListener('fomo:analysis',updateSimulatorCandidates);
+if(window.fomoLatestAnalysis)updateSimulatorCandidates({detail:window.fomoLatestAnalysis});
 setInterval(assessLiquidity,300000);
 $('engineOpen').addEventListener('click',async()=>{
  const openButton=$('engineOpen');
