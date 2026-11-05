@@ -437,14 +437,35 @@ async function assessLiquidity(){
 }
 window.addEventListener('fomo:analysis',e=>{
  candidateSymbols=(e.detail?.symbols||[]).filter(x=>/^[A-Z0-9]{2,20}USDT$/.test(x)&&x!=='TESTUSDT').slice(0,8);
+ const selector=$('engineSymbol'),previous=selector.value;
+ selector.replaceChildren();
+ const testOption=document.createElement('option');testOption.value='TESTUSDT';testOption.textContent='TESTUSDT — illustrative test coin';selector.append(testOption);
+ candidateSymbols.forEach(symbol=>{const option=document.createElement('option');option.value=symbol;option.textContent=symbol;selector.append(option)});
+ if([...selector.options].some(option=>option.value===previous))selector.value=previous;
  $('engineGateStatus').textContent='Received '+candidateSymbols.length+' candidates. Screening indicative spread and depth; automatic entries disabled.';
  assessLiquidity();
 });
 setInterval(assessLiquidity,300000);
-$('engineOpen').addEventListener('click',()=>{
+$('engineOpen').addEventListener('click',async()=>{
+ const openButton=$('engineOpen');
+ if(openButton.disabled)return;
+ openButton.disabled=true;
+ try {
  if(state.position)return message('Close the existing position first.');
  const symbol=$('engineSymbol').value,price=Number($('enginePrice').value);
  if(!symbol||!(price>0)||!Number.isFinite(price))return message('Choose a coin and enter a valid illustrative price.');
+ if(symbol!=='TESTUSDT'){
+  if(!candidateSymbols.includes(symbol))return message('Entry blocked: selected coin is not in the latest scanner shortlist.');
+  try{
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);
+   let response;try{response=await fetch('https://data-api.binance.vision/api/v3/ticker/bookTicker?symbol='+encodeURIComponent(symbol),{cache:'no-store',signal:controller.signal})}finally{clearTimeout(timer)}
+   if(!response.ok)throw Error('market quote unavailable');
+   const quote=await response.json(),bid=Number(quote.bidPrice),ask=Number(quote.askPrice);
+   if(!(bid>0&&ask>=bid&&Number.isFinite(ask)))throw Error('invalid bid/ask');
+   const midpoint=(bid+ask)/2,deviation=Math.abs(price-midpoint)/midpoint;
+   if(deviation>.05)return message('Entry blocked: '+symbol+' entered '+price+' differs from indicative midpoint '+midpoint.toFixed(6)+' by '+(deviation*100).toFixed(2)+'% (5% maximum).');
+  }catch(err){return message('Entry blocked: unable to validate live market price ('+err.message+').')}
+ }
  const notional=Math.min(riskConfig.maxPositionNotional,state.cash/(1+fee+slip),.2/.02);
  const violations=riskCheck(notional);if(violations.length)return message('Entry blocked: '+violations.join('; ')+'.');
  const entry=price*(1+slip),qty=notional/entry,total=notional*(1+fee);
@@ -452,6 +473,7 @@ $('engineOpen').addEventListener('click',()=>{
  state.cash-=total;state.position={symbol,entry,qty,notional,stop:entry*.98,target:entry*1.04,autoEligible:symbol!=='TESTUSDT'&&$('engineAutoExit').checked};
  state.journal.push({time:new Date().toLocaleString(),symbol,action:'OPEN TEST',price:entry,notional,pnl:0});
  save();render();renderPortfolioRisk();message('Test position opened. Stop '+state.position.stop.toPrecision(7)+'; target '+state.position.target.toPrecision(7)+'. Stops are informational only; no background execution.');
+ } finally {if(!state.position)openButton.disabled=false;}
 });
 $('engineClose').addEventListener('click',()=>{
  const p=state.position,price=Number($('engineExit').value);
