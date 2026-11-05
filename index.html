@@ -383,12 +383,41 @@ window.addEventListener('fomo:analysis',e=>{
 const gate=document.createElement('section');gate.className='card';gate.id='engineAgentGate';
 gate.innerHTML='<h3>Agent-to-Execution Safety Gate</h3><p id="engineGateStatus" role="status">Waiting for scanner and council results. Autonomous entries disabled.</p><p>Mandatory checks: verified executable bid/ask, exchange fees, order-book liquidity, position limits, and daily drawdown. An agent vote cannot override missing safety data.</p>';
 root.querySelector('.card')?.append(gate);
-let candidateSymbols=[];
+let candidateSymbols=[],liquidityBusy=false;
+const liquidityBox=document.createElement('div');liquidityBox.id='engineLiquidityResults';gate.append(liquidityBox);
+async function assessLiquidity(){
+ if(liquidityBusy||document.hidden||!navigator.onLine||!candidateSymbols.length)return;
+ liquidityBusy=true;
+ const results=[];
+ for(const symbol of candidateSymbols){
+  try{
+   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),5000);
+   let response;try{response=await fetch('https://data-api.binance.vision/api/v3/depth?symbol='+encodeURIComponent(symbol)+'&limit=20',{cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
+   if(!response.ok)throw Error('Order book unavailable');
+   const book=await response.json();
+   const bids=(book.bids||[]).map(x=>x.map(Number)),asks=(book.asks||[]).map(x=>x.map(Number));
+   if(!bids.length||!asks.length)throw Error('Empty order book');
+   const bid=bids[0][0],ask=asks[0][0],mid=(bid+ask)/2;
+   if(!(bid>0&&ask>=bid&&mid>0))throw Error('Invalid bid/ask');
+   const spreadPct=(ask-bid)/mid*100;
+   const bidDepth=bids.reduce((s,[p,q])=>s+p*q,0),askDepth=asks.reduce((s,[p,q])=>s+p*q,0);
+   const passed=spreadPct<=.25&&bidDepth>=10000&&askDepth>=10000;
+   results.push({symbol,spreadPct,bidDepth,askDepth,passed,reason:passed?'Indicative spread/depth passed':'Spread or depth below research threshold'});
+  }catch(err){results.push({symbol,passed:false,reason:err.message})}
+ }
+ liquidityBox.replaceChildren();
+ const heading=document.createElement('p');heading.textContent='Indicative order-book screening (20 levels; spread ≤0.25%, each side ≥10,000 USDT). Not proof of executable liquidity.';liquidityBox.append(heading);
+ results.forEach(x=>{const p=document.createElement('p');p.textContent=x.symbol+' · '+(x.passed?'SCREEN PASS':'BLOCKED')+(Number.isFinite(x.spreadPct)?' · spread '+x.spreadPct.toFixed(3)+'% · bid depth '+x.bidDepth.toFixed(0)+' USDT · ask depth '+x.askDepth.toFixed(0)+' USDT':'')+' · '+x.reason;liquidityBox.append(p)});
+ const passed=results.filter(x=>x.passed).length;
+ $('engineGateStatus').textContent='Markets screened: '+results.length+' · indicative spread/depth passes: '+passed+' · approved for automatic entry: 0. Fees, executable costs, council approval and drawdown controls are not yet verified; automatic entries remain disabled.';
+ liquidityBusy=false;
+}
 window.addEventListener('fomo:analysis',e=>{
  candidateSymbols=(e.detail?.symbols||[]).filter(x=>/^[A-Z0-9]{2,20}USDT$/.test(x)&&x!=='TESTUSDT').slice(0,8);
- const blocked=candidateSymbols.length;
- $('engineGateStatus').textContent='Candidates received: '+blocked+' · approved for automatic entry: 0 · blocked: '+blocked+'. Execution-cost and liquidity verification are not yet connected; no automatic entries will occur.';
+ $('engineGateStatus').textContent='Received '+candidateSymbols.length+' candidates. Screening indicative spread and depth; automatic entries disabled.';
+ assessLiquidity();
 });
+setInterval(assessLiquidity,300000);
 $('engineOpen').addEventListener('click',()=>{
  if(state.position)return message('Close the existing position first.');
  const symbol=$('engineSymbol').value,price=Number($('enginePrice').value);
