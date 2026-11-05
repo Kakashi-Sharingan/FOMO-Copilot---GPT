@@ -344,7 +344,7 @@ show();
 <p class="signal-note">Assumed fee: 0.10% per side; assumed slippage: 0.10% per side. These are simulation inputs, not verified costs. Position notional is capped at $10 and available cash. One position maximum.</p>
 <div class="row"><button id="engineOpen" type="button">Open simulated test position</button><button id="engineClose" type="button">Close at entered exit price</button><button id="engineReset" type="button">Reset isolated simulator</button></div>
 <label><input id="engineAutoExit" type="checkbox" style="width:auto"> Enable automatic simulated stop-loss / take-profit monitoring for market-priced positions (while page is open)</label><p id="engineMonitor" class="signal-note">Automatic exits off. TESTUSDT uses manual test prices only. Agent-driven entries remain blocked pending safety verification.</p><p id="engineStatus" class="signal-note" aria-live="polite">No simulated orders entered.</p>
-<div class="engine-scroll"><table><thead><tr><th>Time</th><th>Coin</th><th>Action</th><th>Price</th><th>Notional</th><th>Realized P&amp;L</th></tr></thead><tbody id="engineJournal"></tbody></table></div>
+<div id="monitorHistoryPanel" class="engine-scroll" style="max-height:220px;overflow:auto"><h3>Monitoring History</h3><p id="monitorHistoryRows">Waiting for saved price checks.</p></div><div class="engine-scroll"><table><thead><tr><th>Time</th><th>Coin</th><th>Action</th><th>Price</th><th>Notional</th><th>Realized P&amp;L</th></tr></thead><tbody id="engineJournal"></tbody></table></div>
 </div></section>
 <script>
 (function(){
@@ -419,6 +419,8 @@ async function checkAutomaticExit(){
    history.push({time:new Date().toISOString(),symbol:p.symbol,bid,stop:p.stop,target:p.target,trigger:bid<=p.stop?'stop':bid>=p.target?'target':'none'});
    localStorage.setItem(k,JSON.stringify(history.slice(-120)));
   } catch (_) { /* Storage failures must not interrupt simulated exit checks. */ }
+  const historyBox=document.getElementById('monitorHistoryRows');
+  if(historyBox){try{const rows=JSON.parse(localStorage.getItem('fomo_price_check_history_v1')||'[]');historyBox.replaceChildren();rows.slice(-30).reverse().forEach(x=>{const line=document.createElement('p');line.textContent=x.time+' | '+x.symbol+' | bid '+x.bid+' | stop '+x.stop+' | target '+x.target+' | '+x.trigger;historyBox.append(line)})}catch(_){historyBox.textContent='History unavailable in this browser.'}}
   monitor.textContent='Last indicative bid '+bid.toPrecision(8)+' · stop '+p.stop.toPrecision(8)+' · target '+p.target.toPrecision(8)+' · checked '+new Date().toLocaleTimeString();
   if(bid<=p.stop||bid>=p.target){
    const exit=bid*(1-slip),proceeds=p.qty*exit*(1-fee),pnl=proceeds-p.notional*(1+fee);
@@ -439,6 +441,7 @@ $('engineAutoExit').addEventListener('change',()=>{
 setInterval(checkAutomaticExit,15000);
 $('engineReset').addEventListener('click',()=>{if(!confirm('Reset this separate $20 test simulator and its journal?'))return;state=initial();save();render();message('Isolated simulator reset.')});
 render();
+try{const rows=JSON.parse(localStorage.getItem('fomo_price_check_history_v1')||'[]');const box=document.getElementById('monitorHistoryRows');if(box&&rows.length){box.replaceChildren();rows.slice(-30).reverse().forEach(x=>{const p=document.createElement('p');p.textContent=x.time+' | '+x.symbol+' | bid '+x.bid+' | stop '+x.stop+' | target '+x.target+' | '+x.trigger;box.append(p)})}}catch(_){}
 })();
 </script>
 </body></html>
