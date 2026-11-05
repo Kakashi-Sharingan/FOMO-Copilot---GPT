@@ -210,4 +210,49 @@ new MutationObserver(()=>{const fresh=[...root.children].filter(el=>el.querySele
 render();
 })();
 </script>
+<style>
+#councilCarousel{display:grid;grid-template-columns:46px minmax(0,1fr) 46px;gap:8px;align-items:center;margin-top:12px}
+#councilCarousel .council-arrow{height:52px;padding:0;font-size:26px}
+#councilResults{min-width:0}
+#councilResults>.signal-tile{width:100%;box-sizing:border-box}
+#councilCarouselLabel{text-align:center;color:#a9bbd0;font-size:13px;margin:10px 0}
+@media(max-width:550px){#councilCarousel{grid-template-columns:34px minmax(0,1fr) 34px;gap:3px}#councilCarousel .council-arrow{height:44px;font-size:20px}}
+</style>
+<script>
+(function(){
+const target=document.getElementById('councilResults');if(!target)return;
+const shell=document.createElement('div');shell.id='councilCarousel';
+const prev=document.createElement('button'),next=document.createElement('button');
+prev.type=next.type='button';prev.className=next.className='council-arrow';prev.textContent='‹';next.textContent='›';
+prev.setAttribute('aria-label','Previous council coin');next.setAttribute('aria-label','Next council coin');
+target.before(shell);shell.append(prev,target,next);
+const label=document.createElement('div');label.id='councilCarouselLabel';label.setAttribute('aria-live','polite');shell.after(label);
+let selected='',cards=[];
+const symbolOf=el=>(el.querySelector('h3')?.textContent||'').split(' · ')[0].trim().toUpperCase();
+function show(){
+ cards=[...target.children].filter(el=>el.classList.contains('signal-tile'));
+ if(!cards.length){prev.hidden=next.hidden=true;label.textContent='Awaiting agent decisions';return}
+ prev.hidden=next.hidden=false;
+ let index=cards.findIndex(el=>symbolOf(el)===selected);
+ if(index<0)index=0;
+ selected=symbolOf(cards[index]);
+ cards.forEach((el,i)=>{el.hidden=i!==index;el.style.display=i===index?'block':'none'});
+ label.textContent=selected+' · '+(index+1)+' of '+cards.length+' council reviews';
+ prev.disabled=index===0;next.disabled=index===cards.length-1;
+}
+function choose(symbol,fromChart){
+ selected=symbol.toUpperCase();show();
+ if(!fromChart){
+  const charts=[...document.querySelectorAll('#fomoCharts>.signal-tile')];
+  const i=charts.findIndex(el=>symbolOf(el).replace(' / USDT','')===selected||el.querySelector('h3')?.textContent?.startsWith(selected+' /'));
+  if(i>=0){const buttons=document.querySelectorAll('#chartCarouselControls .chart-dots button');buttons[i]?.click()}
+ }
+}
+prev.addEventListener('click',()=>{const i=cards.findIndex(el=>symbolOf(el)===selected);if(i>0)choose(symbolOf(cards[i-1]),false)});
+next.addEventListener('click',()=>{const i=cards.findIndex(el=>symbolOf(el)===selected);if(i<cards.length-1)choose(symbolOf(cards[i+1]),false)});
+window.addEventListener('fomo:chart-selected',e=>{if(e.detail?.symbol)choose(e.detail.symbol,true)});
+new MutationObserver(()=>show()).observe(target,{childList:true});
+show();
+})();
+</script>
 </body></html>
