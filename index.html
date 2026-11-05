@@ -449,7 +449,7 @@ async function assessLiquidity(){
  }
  liquidityBox.replaceChildren();
  const heading=document.createElement('p');heading.textContent='Indicative order-book screening (20 levels; spread ≤0.25%, each side ≥10,000 USDT). Research-only round-trip cost model = spread + 0.10% fee per side + 0.10% slippage per side. Fees and slippage are assumptions, NOT verified exchange costs; automatic entries remain disabled.';liquidityBox.append(heading);
- results.forEach(x=>{const p=document.createElement('p');p.textContent=x.symbol+' · '+(x.passed?'SCREEN PASS':'BLOCKED')+(Number.isFinite(x.spreadPct)?' · spread '+x.spreadPct.toFixed(3)+'% · bid depth '+x.bidDepth.toFixed(0)+' USDT · ask depth '+x.askDepth.toFixed(0)+' USDT':'')+(Number.isFinite(x.costEstimatePct)?' · estimated round-trip cost '+x.costEstimatePct.toFixed(3)+'% (~
+ results.forEach(x=>{const p=document.createElement('p');p.textContent=x.symbol+' · '+(x.passed?'SCREEN PASS':'BLOCKED')+(Number.isFinite(x.spreadPct)?' · spread '+x.spreadPct.toFixed(3)+'% · bid depth '+x.bidDepth.toFixed(0)+' USDT · ask depth '+x.askDepth.toFixed(0)+' USDT':'')+(Number.isFinite(x.costEstimatePct)?' · estimated round-trip cost '+x.costEstimatePct.toFixed(3)+'% (~$'+x.assumedRoundTripCostOn10.toFixed(4)+' on $10)':'')+(x.reason?' · '+x.reason:'');liquidityBox.append(p)});
  const passed=results.filter(x=>x.passed).length;renderPortfolioRisk();
  $('engineGateStatus').textContent='Markets screened: '+results.length+' · indicative spread/depth passes: '+passed+' · approved for automatic entry: 0. Fees, executable costs, council approval and drawdown controls are not yet verified; automatic entries remain disabled.';
  liquidityBusy=false;
