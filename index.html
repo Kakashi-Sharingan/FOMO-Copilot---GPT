@@ -150,13 +150,15 @@ button.addEventListener('click',scan);setInterval(()=>{if(!document.hidden)scan(
 #unifiedDashboard .dashboard-grid .stack,#unifiedDashboard .dashboard-grid .signal-grid{min-width:0}
 #unifiedDashboard .dashboard-grid svg{max-width:100%}
 @media(max-width:750px){#unifiedDashboard{padding:12px 14px 24px}#unifiedDashboard .dashboard-head{padding:16px}#legacyLab{padding:0 14px}}
-#unifiedDashboard #fomoCharts{display:flex;gap:0;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:thin}
-#unifiedDashboard #fomoCharts>*{flex:0 0 100%;min-width:0;scroll-snap-align:start;box-sizing:border-box}
+#unifiedDashboard #fomoCharts{display:block;min-width:0}
+#unifiedDashboard #fomoCharts>.signal-tile{width:100%;max-width:100%;box-sizing:border-box}
+#chartCarouselShell{display:grid;grid-template-columns:46px minmax(0,1fr) 46px;align-items:center;gap:8px;width:100%;min-width:0}
+#chartCarouselShell .chart-arrow{height:52px;padding:0;font-size:26px;display:grid;place-items:center}
 #chartCarouselControls{display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0}
-#chartCarouselControls button{min-width:42px}
-#chartCarouselControls .chart-dots{display:flex;gap:7px;align-items:center}
-#chartCarouselControls .chart-dots button{min-width:0;width:11px;height:11px;border-radius:50%;padding:0;border:1px solid #8ba5c4;background:#31465e}
+#chartCarouselControls .chart-dots{display:flex;gap:8px;align-items:center}
+#chartCarouselControls .chart-dots button{min-width:0;width:12px;height:12px;border-radius:50%;padding:0;border:1px solid #8ba5c4;background:#31465e}
 #chartCarouselControls .chart-dots button[aria-current="true"]{background:#8cf2cb;border-color:#8cf2cb}
+@media(max-width:550px){#chartCarouselShell{grid-template-columns:34px minmax(0,1fr) 34px;gap:3px}#chartCarouselShell .chart-arrow{height:44px;font-size:20px}}
 </style>
 <script>
 (function(){
@@ -182,19 +184,29 @@ button.addEventListener('click',scan);setInterval(()=>{if(!document.hidden)scan(
 <script>
 (function(){
 const root=document.getElementById('fomoCharts');if(!root)return;
-const card=root.closest('.card');if(!card)return;
+const shell=document.createElement('div');shell.id='chartCarouselShell';
+const prev=document.createElement('button');prev.type='button';prev.className='chart-arrow';prev.textContent='‹';prev.setAttribute('aria-label','Previous coin chart');
+const next=document.createElement('button');next.type='button';next.className='chart-arrow';next.textContent='›';next.setAttribute('aria-label','Next coin chart');
+root.parentNode.insertBefore(shell,root);shell.append(prev,root,next);
 const controls=document.createElement('div');controls.id='chartCarouselControls';
-const prev=document.createElement('button');prev.type='button';prev.textContent='←';prev.setAttribute('aria-label','Previous chart');
 const label=document.createElement('strong');label.setAttribute('aria-live','polite');
-const next=document.createElement('button');next.type='button';next.textContent='→';next.setAttribute('aria-label','Next chart');
-const dots=document.createElement('div');dots.className='chart-dots';controls.append(prev,label,dots,next);root.after(controls);
-let index=0;
-function slides(){return [...root.children].filter(el=>el.querySelector('svg'))}
-function render(){const a=slides();if(!a.length){controls.hidden=true;return}controls.hidden=false;index=Math.min(index,a.length-1);label.textContent='Chart '+(index+1)+' of '+a.length;prev.disabled=index===0;next.disabled=index===a.length-1;dots.replaceChildren();a.forEach((_,i)=>{const b=document.createElement('button');b.type='button';b.setAttribute('aria-label','Show chart '+(i+1));b.setAttribute('aria-current',String(i===index));b.onclick=()=>go(i);dots.append(b)})}
-function go(i){const a=slides();if(!a.length)return;index=Math.max(0,Math.min(i,a.length-1));root.scrollTo({left:a[index].offsetLeft-root.offsetLeft,behavior:'smooth'});render()}
-prev.onclick=()=>go(index-1);next.onclick=()=>go(index+1);
-let scheduled=false;new MutationObserver(()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;index=0;render();root.scrollLeft=0})}).observe(root,{childList:true});
-root.addEventListener('scroll',()=>{const a=slides();if(!a.length)return;const i=a.reduce((best,s,j)=>Math.abs(s.offsetLeft-root.offsetLeft-root.scrollLeft)<Math.abs(a[best].offsetLeft-root.offsetLeft-root.scrollLeft)?j:best,0);if(i!==index){index=i;render()}},{passive:true});
+const dots=document.createElement('div');dots.className='chart-dots';controls.append(label,dots);shell.after(controls);
+let index=0,cache=[];
+function render(){
+ const slides=[...root.children].filter(el=>el.querySelector('svg'));
+ if(slides.length)cache=slides;
+ if(!cache.length){controls.hidden=true;prev.hidden=true;next.hidden=true;return}
+ controls.hidden=false;prev.hidden=false;next.hidden=false;
+ index=Math.min(index,cache.length-1);
+ cache.forEach((el,i)=>{el.hidden=i!==index;el.style.display=i===index?'block':'none'});
+ label.textContent=(cache[index].querySelector('h3')?.textContent||'Chart')+' · '+(index+1)+' of '+cache.length;
+ prev.disabled=index===0;next.disabled=index===cache.length-1;
+ dots.replaceChildren();
+ cache.forEach((_,i)=>{const b=document.createElement('button');b.type='button';b.setAttribute('aria-label','Show coin chart '+(i+1));b.setAttribute('aria-current',String(i===index));b.addEventListener('click',()=>go(i));dots.append(b)});
+}
+function go(i){index=Math.max(0,Math.min(i,cache.length-1));render();window.dispatchEvent(new CustomEvent('fomo:chart-selected',{detail:{symbol:cache[index]?.querySelector('h3')?.textContent?.split(' ')[0]||''}}))}
+prev.addEventListener('click',()=>go(index-1));next.addEventListener('click',()=>go(index+1));
+new MutationObserver(()=>{const fresh=[...root.children].filter(el=>el.querySelector('svg'));if(fresh.length){cache=fresh;render()}}).observe(root,{childList:true});
 render();
 })();
 </script>
