@@ -412,6 +412,13 @@ async function checkAutomaticExit(){
   const spread=(ask-bid)/((ask+bid)/2);
   if(spread>.01)throw Error('Spread above 1%; simulated execution paused');
   if(state.position!==p)return;
+  try {
+   const k='fomo_price_check_history_v1';
+   const old=JSON.parse(localStorage.getItem(k)||'[]');
+   const history=Array.isArray(old)?old:[];
+   history.push({time:new Date().toISOString(),symbol:p.symbol,bid,stop:p.stop,target:p.target,trigger:bid<=p.stop?'stop':bid>=p.target?'target':'none'});
+   localStorage.setItem(k,JSON.stringify(history.slice(-120)));
+  } catch (_) { /* Storage failures must not interrupt simulated exit checks. */ }
   monitor.textContent='Last indicative bid '+bid.toPrecision(8)+' · stop '+p.stop.toPrecision(8)+' · target '+p.target.toPrecision(8)+' · checked '+new Date().toLocaleTimeString();
   if(bid<=p.stop||bid>=p.target){
    const exit=bid*(1-slip),proceeds=p.qty*exit*(1-fee),pnl=proceeds-p.notional*(1+fee);
