@@ -255,4 +255,44 @@ new MutationObserver(()=>show()).observe(target,{childList:true});
 show();
 })();
 </script>
+<style>
+#paperAutomation{max-width:1100px;margin:0 auto 24px;padding:0 22px}
+#paperAutomation .paper-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+#paperAutomation .paper-metric{border:1px solid #344e68;border-radius:10px;padding:12px;min-width:0}
+#paperAutomation .paper-metric strong{display:block;font-size:20px;margin-top:6px}
+#paperAutomation .paper-log{max-height:260px;overflow:auto;font-size:13px}
+#paperAutomation .paper-log p{border-bottom:1px solid #344e68;padding:8px 0}
+@media(max-width:650px){#paperAutomation{padding:0 14px}#paperAutomation .paper-grid{grid-template-columns:1fr}}
+</style>
+<section id="paperAutomation"><div class="card">
+<div class="row"><h2>Autonomous paper-trading readiness</h2><span class="pill" id="paperMode">SAFE MODE · NO EXECUTION</span></div>
+<p>Runs a read-only preflight automatically after each completed market analysis. No simulated order is entered unless independently verified executable prices, spread, fees, liquidity and hard risk limits are available. A favorable technical vote alone never authorizes a trade.</p>
+<div class="paper-grid"><div class="paper-metric">Markets checked<strong id="paperChecked">0</strong></div><div class="paper-metric">Approved for paper entry<strong id="paperApproved">0</strong></div><div class="paper-metric">Blocked by safety checks<strong id="paperBlocked">0</strong></div></div>
+<p class="signal-note" id="paperPreflightStatus">Waiting for the next automated analysis.</p>
+<div class="paper-log" id="paperPreflightLog" aria-live="polite"></div>
+</div></section>
+<script>
+(function(){
+ const panel=document.getElementById('paperAutomation'),dashboard=document.getElementById('unifiedDashboard');
+ if(dashboard)dashboard.after(panel);
+ const checked=document.getElementById('paperChecked'),approved=document.getElementById('paperApproved'),blocked=document.getElementById('paperBlocked'),status=document.getElementById('paperPreflightStatus'),log=document.getElementById('paperPreflightLog');
+ const history=[];
+ window.addEventListener('fomo:analysis',event=>{
+  const results=event.detail?.results||[],symbols=event.detail?.symbols||[];
+  const rows=results.map((r,i)=>{
+   const symbol=symbols[i]||'Unknown',a=r?.data;
+   const reasons=[];
+   if(!r?.ok||!a)reasons.push('Unverified candle data');
+   if(a&&!(a.score>=4&&a.trend==='Bullish'&&a.r>=45&&a.r<68&&a.macd>0&&a.rv>=1.2))reasons.push('Technical, momentum, volume or Skeptic gate not passed');
+   reasons.push('Executable bid/ask spread not verified','Fees and slippage not verified','Order-book liquidity not verified','Risk budget and daily limits not verified');
+   return {symbol,reasons};
+  });
+  checked.textContent=String(rows.length);approved.textContent='0';blocked.textContent=String(rows.length);
+  status.textContent='Last preflight: '+new Date().toLocaleString()+' · '+rows.length+' markets reviewed · no entries authorized. This is a safety-readiness check, not a backtest.';
+  history.unshift({time:new Date().toLocaleTimeString(),rows});history.splice(12);
+  log.replaceChildren();
+  history.forEach(batch=>{const p=document.createElement('p');p.textContent=batch.time+' · '+batch.rows.map(r=>r.symbol.replace('USDT','')+': BLOCKED ('+r.reasons.join('; ')+')').join(' | ');log.append(p)});
+ });
+})();
+</script>
 </body></html>
