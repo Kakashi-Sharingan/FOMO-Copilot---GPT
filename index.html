@@ -383,6 +383,25 @@ window.addEventListener('fomo:analysis',e=>{
 const gate=document.createElement('section');gate.className='card';gate.id='engineAgentGate';
 gate.innerHTML='<h3>Agent-to-Execution Safety Gate</h3><p id="engineGateStatus" role="status">Waiting for scanner and council results. Autonomous entries disabled.</p><p>Mandatory checks: verified executable bid/ask, exchange fees, order-book liquidity, position limits, and daily drawdown. An agent vote cannot override missing safety data.</p>';
 root.querySelector('.card')?.append(gate);
+// Portfolio safeguards apply to manual paper entries and to any future automatic entry path.
+const riskConfig=Object.freeze({startingCapital:20,maxPositionNotional:10,maxOpenPositions:1,maxDailyRealizedLoss:0.60,minCashReserve:5});
+const riskPanel=document.createElement('p');riskPanel.id='enginePortfolioRisk';riskPanel.setAttribute('role','status');gate.append(riskPanel);
+function realizedToday(){
+ const today=new Date().toDateString();
+ return state.journal.filter(row=>row.action!=='OPEN TEST'&&row.pnl<0&&new Date(row.time).toDateString()===today).reduce((sum,row)=>sum+row.pnl,0);
+}
+function riskCheck(notional){
+ const reasons=[];
+ if(state.position)reasons.push('one-position exposure limit reached');
+ if(!Number.isFinite(notional)||notional<1||notional>riskConfig.maxPositionNotional)reasons.push('position size outside $1–$10');
+ if(state.cash-notional*(1+fee)<riskConfig.minCashReserve)reasons.push('minimum $5 cash reserve');
+ if(realizedToday()<=-riskConfig.maxDailyRealizedLoss)reasons.push('daily realized-loss cap reached');
+ return reasons;
+}
+function renderPortfolioRisk(){
+ const loss=realizedToday();
+ riskPanel.textContent='Portfolio safeguards: max $10 per position · 1 concurrent position · $5 minimum cash reserve · daily realized-loss cap $0.60. Today’s recorded losses: '+fmt(-loss)+'. '+(loss<=-riskConfig.maxDailyRealizedLoss?'NEW ENTRIES BLOCKED':'Entry limits enforced for new manual positions')+'. Realized-loss checks do not measure unrealized drawdown.';
+}
 let candidateSymbols=[],liquidityBusy=false;
 const liquidityBox=document.createElement('div');liquidityBox.id='engineLiquidityResults';gate.append(liquidityBox);
 async function assessLiquidity(){
@@ -412,7 +431,7 @@ async function assessLiquidity(){
  liquidityBox.replaceChildren();
  const heading=document.createElement('p');heading.textContent='Indicative order-book screening (20 levels; spread ≤0.25%, each side ≥10,000 USDT). Research-only round-trip cost model = spread + 0.10% fee per side + 0.10% slippage per side. Fees and slippage are assumptions, NOT verified exchange costs; automatic entries remain disabled.';liquidityBox.append(heading);
  results.forEach(x=>{const p=document.createElement('p');p.textContent=x.symbol+' · '+(x.passed?'SCREEN PASS':'BLOCKED')+(Number.isFinite(x.spreadPct)?' · spread '+x.spreadPct.toFixed(3)+'% · bid depth '+x.bidDepth.toFixed(0)+' USDT · ask depth '+x.askDepth.toFixed(0)+' USDT':'')+(Number.isFinite(x.costEstimatePct)?' · estimated round-trip cost '+x.costEstimatePct.toFixed(3)+'% (~});
- const passed=results.filter(x=>x.passed).length;
+ const passed=results.filter(x=>x.passed).length;renderPortfolioRisk();
  $('engineGateStatus').textContent='Markets screened: '+results.length+' · indicative spread/depth passes: '+passed+' · approved for automatic entry: 0. Fees, executable costs, council approval and drawdown controls are not yet verified; automatic entries remain disabled.';
  liquidityBusy=false;
 }
@@ -426,13 +445,13 @@ $('engineOpen').addEventListener('click',()=>{
  if(state.position)return message('Close the existing position first.');
  const symbol=$('engineSymbol').value,price=Number($('enginePrice').value);
  if(!symbol||!(price>0)||!Number.isFinite(price))return message('Choose a coin and enter a valid illustrative price.');
- const notional=Math.min(10,state.cash/(1+fee+slip),.2/.02);
- if(notional<1)return message('Insufficient cash for a test position.');
+ const notional=Math.min(riskConfig.maxPositionNotional,state.cash/(1+fee+slip),.2/.02);
+ const violations=riskCheck(notional);if(violations.length)return message('Entry blocked: '+violations.join('; ')+'.');
  const entry=price*(1+slip),qty=notional/entry,total=notional*(1+fee);
  if(total>state.cash+1e-8)return message('Insufficient cash.');
  state.cash-=total;state.position={symbol,entry,qty,notional,stop:entry*.98,target:entry*1.04,autoEligible:symbol!=='TESTUSDT'&&$('engineAutoExit').checked};
  state.journal.push({time:new Date().toLocaleString(),symbol,action:'OPEN TEST',price:entry,notional,pnl:0});
- save();render();message('Test position opened. Stop '+state.position.stop.toPrecision(7)+'; target '+state.position.target.toPrecision(7)+'. Stops are informational only; no background execution.');
+ save();render();renderPortfolioRisk();message('Test position opened. Stop '+state.position.stop.toPrecision(7)+'; target '+state.position.target.toPrecision(7)+'. Stops are informational only; no background execution.');
 });
 $('engineClose').addEventListener('click',()=>{
  const p=state.position,price=Number($('engineExit').value);
