@@ -1,0 +1,9 @@
+/* FOMO Copilot public market-data adapter. Read-only, no keys or storage. */
+(function(g){'use strict';
+const hosts=['https://data-api.binance.vision','https://api.binance.com','https://api1.binance.com'];
+async function getJson(url,timeoutMs=6500){const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),timeoutMs);try{const r=await fetch(url,{signal:ctrl.signal,cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);return await r.json();}finally{clearTimeout(t);}}
+async function tryHosts(path,valid){const failures=[];for(const host of hosts){try{const value=await getJson(host+path);if(!valid(value))throw Error('invalid payload');return {value,source:host,receivedAt:Date.now()};}catch(e){failures.push(host+' '+String(e.message||e));}}throw Error(failures.join(' | '));}
+async function candles(symbol,interval='15m',limit=300){if(!/^[A-Z0-9]{2,20}USDT$/.test(symbol))throw Error('invalid symbol');if(!['5m','15m','1h'].includes(interval))throw Error('invalid interval');const n=Math.min(500,Math.max(2,Math.floor(limit)));return tryHosts('/api/v3/klines?symbol='+encodeURIComponent(symbol)+'&interval='+interval+'&limit='+n,x=>Array.isArray(x)&&x.length>0&&Array.isArray(x[0]));}
+async function referenceQuotes(){const symbols=['BTCUSDT','ETHUSDT','SOLUSDT'];const r=await tryHosts('/api/v3/ticker/price',x=>Array.isArray(x));const lookup=new Map(r.value.map(x=>[x.symbol,Number(x.price)]));if(!symbols.every(x=>Number.isFinite(lookup.get(x))&&lookup.get(x)>0))throw Error('incomplete quote response');return {source:r.source,receivedAt:r.receivedAt,unit:'USDT',executable:false,prices:{BTC:lookup.get(symbols[0]),ETH:lookup.get(symbols[1]),SOL:lookup.get(symbols[2])}};}
+g.FomoMarketData=Object.freeze({candles,referenceQuotes});
+})(typeof globalThis!=='undefined'?globalThis:this);
