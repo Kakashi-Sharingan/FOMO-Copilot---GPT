@@ -50,17 +50,23 @@ async function load(){
  const symbol=$('fomoLabSymbol').value,btn=$('fomoLabRun');btn.disabled=true;render('Fetching closed 15-minute candles…');
  try{
   if(!/^[A-Z0-9]{2,20}USDT$/.test(symbol))throw Error('Invalid symbol');
-  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),9000);let response;
-  try{response=await fetch('https://data-api.binance.vision/api/v3/klines?symbol='+encodeURIComponent(symbol)+'&interval=15m&limit=300',{signal:ctl.signal,cache:'no-store'});}finally{clearTimeout(timer);}
-  if(!response.ok)throw Error('Candle feed HTTP '+response.status);
-  const rows=await response.json();if(!Array.isArray(rows))throw Error('Malformed candle response');
+  const sources=['https://data-api.binance.vision','https://api.binance.com','https://api1.binance.com'];
+  let rows=null,provider='',failures=[];
+  for(const host of sources){const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),7000);
+   try{const response=await fetch(host+'/api/v3/klines?symbol='+encodeURIComponent(symbol)+'&interval=15m&limit=300',{signal:ctl.signal,cache:'no-store'});
+    if(!response.ok)throw Error('HTTP '+response.status);
+    const payload=await response.json();if(!Array.isArray(payload)||!payload.length||!Array.isArray(payload[0]))throw Error('Invalid candle response');
+    rows=payload;provider=host;break;
+   }catch(e){failures.push(host+': '+String(e.message||e));}finally{clearTimeout(timer);}
+  }
+  if(!rows)throw Error('All public candle providers failed. '+failures.join(' | '));
   const now=Date.now(),candles=E.normalizeCandles(rows.map(x=>({time:Number(x[0]),open:Number(x[1]),high:Number(x[2]),low:Number(x[3]),close:Number(x[4]),volume:Number(x[5]),closed:Number(x[6])<now})));
   if(candles.length<55)throw Error('Not enough closed candles');
   if(now-(candles.at(-1).time+900000)>45*60000)throw Error('Stale candle data');
-  last={symbol,candles,review:review(candles),retro:retrospective(candles)};
+  last={symbol,provider,candles,review:review(candles),retro:retrospective(candles)};
   const r=last.review;
   render(symbol+' · '+r.base.regime.toUpperCase()+' · '+r.authorization,
-   'Last closed candle: '+new Date(r.time).toLocaleString()+' | Close '+r.close+' | RSI '+r.base.indicators.rsi14.toFixed(1)+' | ATR '+r.base.indicators.atrPct.toFixed(2)+'%\n'+
+   'Data provider: '+provider+' | Last closed candle: '+new Date(r.time).toLocaleString()+' | Close '+r.close+' | RSI '+r.base.indicators.rsi14.toFixed(1)+' | ATR '+r.base.indicators.atrPct.toFixed(2)+'%\n'+
    'Candidate strategies:\n'+r.candidates.map(x=>(x.match?'RESEARCH':'SKIP')+' — '+x.name+': '+x.reason).join('\n')+'\n'+
    'Agent evidence:\n'+r.votes.map(x=>x.role+' '+x.vote+': '+x.reason).join('\n')+'\n'+
    'Research vetoes: '+(r.vetoes.join('; ')||'None detected')+'\n'+
@@ -68,5 +74,5 @@ async function load(){
  }catch(e){render('Research unavailable — no trade',String(e.message||e));}finally{btn.disabled=false;}
 }
 $('fomoLabRun').addEventListener('click',load);
-$('fomoLabExport').addEventListener('click',()=>{if(!last)return;const data={version:1,mode:'read-only research',created:new Date().toISOString(),symbol:last.symbol,review:last.review,retrospective:last.retro};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='fomo-research-'+last.symbol+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+$('fomoLabExport').addEventListener('click',()=>{if(!last)return;const data={version:1,mode:'read-only research',created:new Date().toISOString(),symbol:last.symbol,provider:last.provider,review:last.review,retrospective:last.retro};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='fomo-research-'+last.symbol+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 })();
