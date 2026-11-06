@@ -374,6 +374,25 @@ const diagnosticText=document.createElement('p');
 diagnosticText.id='engineDiagnosticText';
 diagnostic.append(diagnosticHeading,diagnosticText);
 $('engineMonitor').after(diagnostic);
+// Pure regression checks: no saved state, network calls, or orders.
+function evaluateExitTest(position,bid){
+ if(!position.entryVerifiedAtOpen)return 'legacy-block';
+ if(![position.entry,position.stop,position.target,position.qty,position.notional,bid].every(v=>Number.isFinite(Number(v))&&Number(v)>0))return 'invalid-block';
+ if(!(position.stop<position.entry&&position.target>position.entry))return 'invalid-block';
+ return bid<=position.stop?'stop':bid>=position.target?'target':'hold';
+}
+const phase3Button=document.createElement('button');
+phase3Button.type='button';
+phase3Button.textContent='Run Phase 3 non-destructive regression tests';
+const phase3Output=document.createElement('p');
+phase3Output.setAttribute('aria-live','polite');
+diagnostic.append(phase3Button,phase3Output);
+phase3Button.addEventListener('click',()=>{
+ const base={entry:100,stop:98,target:104,qty:.1,notional:10,entryVerifiedAtOpen:true};
+ const cases=[['normal price',base,101,'hold'],['stop at -6%',{...base,stop:95},94,'stop'],['target at +6%',{...base,target:105},106,'target'],['legacy unverified',{...base,entryVerifiedAtOpen:false},99,'legacy-block'],['invalid stop',{...base,stop:105},99,'invalid-block'],['bad quote',base,NaN,'invalid-block']];
+ const passed=cases.filter(([_,p,bid,expected])=>evaluateExitTest(p,bid)===expected).length;
+ phase3Output.textContent='Phase 3 regression checks: '+passed+'/'+cases.length+' passed. Read-only; no simulated orders, state mutations or journal writes.';
+});
 function renderDiagnostics(){
  const p=state.position;
  const cash=Number(state.cash),notional=Number(p?.notional),entry=Number(p?.entry),stop=Number(p?.stop),qty=Number(p?.qty);
@@ -554,7 +573,7 @@ $('engineOpen').addEventListener('click',async()=>{
  if(violations.length)return blockEntry(violations,symbol);
  const entry=price*(1+slip),qty=notional/entry,total=notional*(1+fee);
  if(total>state.cash+1e-8)return message('Insufficient cash.');
- state.cash-=total;state.position={symbol,entry,qty,notional,stop,target:entry+2*(entry-stop),reason,autoEligible:symbol!=='TESTUSDT'&&$('engineAutoExit').checked};
+ state.cash-=total;state.position={symbol,entry,qty,notional,stop,target:entry+2*(entry-stop),reason,autoEligible:symbol!=='TESTUSDT'&&$('engineAutoExit').checked,entryVerifiedAtOpen:symbol!=='TESTUSDT'};
  state.journal.push({time:new Date().toLocaleString(),symbol,action:'OPEN TEST',price:entry,notional,pnl:0,reason,stop});
  save();render();renderPortfolioRisk();message('Test position opened. Stop '+state.position.stop.toPrecision(7)+'; target '+state.position.target.toPrecision(7)+'. Stops are informational only; no background execution.');
  } finally {if(!state.position)openButton.disabled=false;}
@@ -584,14 +603,16 @@ async function checkAutomaticExit(){
   if(!(bid>0&&ask>=bid))throw Error('Invalid market quote');
   const spread=(ask-bid)/((ask+bid)/2);
   if(spread>.01)throw Error('Spread above 1%; simulated execution paused');
-  // Reject mismatched manual entry prices before any simulated automatic exit.
-  // This also protects positions created before the validation was introduced.
-  const mid=(ask+bid)/2;
-  const deviation=Math.abs(p.entry-mid)/mid;
-  if(!Number.isFinite(p.entry)||p.entry<=0||deviation>.05){
-   p.autoEligible=false;
-   save();
-   monitor.textContent='AUTO EXITS BLOCKED: entry price differs from the current market midpoint by '+(deviation*100).toFixed(2)+'% (maximum 5%). This is likely an illustrative test price. Preserve the journal and use a fresh market-priced test after review.';
+  // Entry price proximity is verified once when opening a market-priced position.
+  // Do not compare an established entry with current price: a genuine 5% move
+  // must not suppress stop-loss / take-profit monitoring.
+  if(!p.entryVerifiedAtOpen){
+   monitor.textContent='AUTO EXIT PAUSED: legacy position lacks recorded entry-price verification. Position preserved; review before manual exit.';
+   return;
+  }
+  if(![p.entry,p.stop,p.target,p.qty,p.notional].every(v=>Number.isFinite(Number(v))&&Number(v)>0)
+     || !(p.stop<p.entry&&p.target>p.entry)){
+   monitor.textContent='AUTO EXIT PAUSED: invalid saved position values. Position preserved for manual review.';
    return;
   }
   if(state.position!==p)return;
