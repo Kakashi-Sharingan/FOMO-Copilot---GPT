@@ -50,16 +50,8 @@ async function load(){
  const symbol=$('fomoLabSymbol').value,btn=$('fomoLabRun');btn.disabled=true;render('Fetching closed 15-minute candles…');
  try{
   if(!/^[A-Z0-9]{2,20}USDT$/.test(symbol))throw Error('Invalid symbol');
-  const sources=['https://data-api.binance.vision','https://api.binance.com','https://api1.binance.com'];
-  let rows=null,provider='',failures=[];
-  for(const host of sources){const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),7000);
-   try{const response=await fetch(host+'/api/v3/klines?symbol='+encodeURIComponent(symbol)+'&interval=15m&limit=300',{signal:ctl.signal,cache:'no-store'});
-    if(!response.ok)throw Error('HTTP '+response.status);
-    const payload=await response.json();if(!Array.isArray(payload)||!payload.length||!Array.isArray(payload[0]))throw Error('Invalid candle response');
-    rows=payload;provider=host;break;
-   }catch(e){failures.push(host+': '+String(e.message||e));}finally{clearTimeout(timer);}
-  }
-  if(!rows)throw Error('All public candle providers failed. '+failures.join(' | '));
+  const feed=await window.FomoMarketData.candles(symbol,'15m',300);
+  const rows=feed.value,provider=feed.source;
   const now=Date.now(),candles=E.normalizeCandles(rows.map(x=>({time:Number(x[0]),open:Number(x[1]),high:Number(x[2]),low:Number(x[3]),close:Number(x[4]),volume:Number(x[5]),closed:Number(x[6])<now})));
   if(candles.length<55)throw Error('Not enough closed candles');
   if(now-(candles.at(-1).time+900000)>45*60000)throw Error('Stale candle data');
