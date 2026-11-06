@@ -1,0 +1,11 @@
+/* Read-only runtime health diagnostics. Never modifies trading state. */
+(()=>{'use strict';const $=id=>document.getElementById(id),out=$('fomoHealthOutput'),button=$('fomoHealthRun');if(!out||!button)return;
+const keys=['fomo_copilot_paper_v2','fomo_isolated_execution_v1','fomo_copilot_research_v4','fomo_agent_decisions_v1','fomo_six_agent_log_v1','fomo_price_check_history_v1'];
+function stateSummary(key){try{const raw=localStorage.getItem(key);if(raw===null)return {key,status:'not initialized'};const v=JSON.parse(raw);return {key,status:'present',cash:typeof v.cash==='number'?v.cash:undefined,balance:typeof v.balance==='number'?v.balance:undefined,positionPresent:!!v.position,journalCount:Array.isArray(v.journal)?v.journal.length:undefined};}catch(e){return {key,status:'unreadable: '+e.message};}}
+async function probe(name,url,validate){const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),8000);try{const r=await fetch(url,{signal:ctl.signal,cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const data=await r.json();if(!validate(data))throw Error('Invalid provider payload');return name+': AVAILABLE';}catch(e){return name+': UNAVAILABLE ('+String(e.message||e)+')';}finally{clearTimeout(timer);}}
+async function run(){button.disabled=true;out.textContent='Checking read-only health…';try{const results=await Promise.all([
+ probe('Binance public candles','https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=2',x=>Array.isArray(x)&&x.length>0),
+ probe('CoinGecko quotes','https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',x=>Number(x?.bitcoin?.usd)>0)
+]);const report={checked:new Date().toISOString(),url:location.href,researchEngineLoaded:!!window.FomoResearchEngine,labControlsPresent:!!$('fomoLabRun'),dataProviders:results,localPaperAccounts:keys.map(stateSummary),note:'Read-only snapshot. Accounts are separate storage keys; no balances or positions have been changed. Provider status is browser/network dependent. Auto entries remain disabled.'};out.textContent=JSON.stringify(report,null,2);}catch(e){out.textContent='Health check error: '+String(e.message||e);}finally{button.disabled=false;}}
+button.addEventListener('click',run);
+})();
