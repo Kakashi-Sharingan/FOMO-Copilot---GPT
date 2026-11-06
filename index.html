@@ -374,6 +374,51 @@ const diagnosticText=document.createElement('p');
 diagnosticText.id='engineDiagnosticText';
 diagnostic.append(diagnosticHeading,diagnosticText);
 $('engineMonitor').after(diagnostic);
+
+// Phase 2: non-mutating readiness validation for the isolated paper simulator.
+const validation=document.createElement('div');
+validation.id='engineValidationPanel';
+validation.className='paper-metric';
+validation.style.marginTop='14px';
+const validationTitle=document.createElement('h3');
+validationTitle.textContent='Paper-trading validation dashboard';
+const validationDescription=document.createElement('p');
+validationDescription.className='signal-note';
+validationDescription.textContent='Read-only checks against saved browser data. A PASS confirms only the stated local condition, not exchange execution, live monitoring, or profitability. Never opens, closes, or resets positions.';
+const validationButton=document.createElement('button');
+validationButton.type='button';
+validationButton.textContent='Run read-only validation';
+const validationResults=document.createElement('div');
+validationResults.id='engineValidationResults';
+validationResults.setAttribute('aria-live','polite');
+validation.append(validationTitle,validationDescription,validationButton,validationResults);
+diagnostic.after(validation);
+function validatePaperState(){
+ const p=state.position;
+ const results=[];
+ const add=(name,ok,detail)=>results.push({name,ok,detail});
+ add('Journal structure',Array.isArray(state.journal)&&state.journal.every(x=>x&&typeof x.action==='string'&&typeof x.symbol==='string'),'Local journal records have expected action and symbol fields');
+ add('Cash and realized P/L',Number.isFinite(state.cash)&&state.cash>=0&&Number.isFinite(state.realized),'Saved cash and realized P/L are finite; no reconciliation against external exchange');
+ add('Single-position limit',!p||(!Array.isArray(p)&&typeof p==='object'),'Simulator stores at most one position object');
+ const validStop=!!p&&Number.isFinite(Number(p.entry))&&Number.isFinite(Number(p.stop))&&Number(p.stop)>0&&Number(p.stop)<Number(p.entry);
+ add('Predetermined stop',!p?null:validStop,p?'Saved stop must be positive and below long entry':'No open position to inspect');
+ const estimatedEquity=Number(state.cash)+(p?Number(p.notional):0);
+ const loss=p&&validStop?Number(p.notional)*(Number(p.entry)-Number(p.stop))/Number(p.entry)+Number(p.notional)*2*(fee+slip):NaN;
+ add('1% planned stop risk',!p?null:(Number.isFinite(loss)&&Number.isFinite(estimatedEquity)&&estimatedEquity>0?loss<=estimatedEquity*.01+1e-9:null),p?'Estimated risk uses saved entry/stop/notional and illustrative fees/slippage; gaps may exceed budget':'No open position to inspect');
+ let history=[],historyOk=true;
+ try{const raw=JSON.parse(localStorage.getItem('fomo_price_check_history_v1')||'[]');if(Array.isArray(raw))history=raw;else historyOk=false}catch(_){historyOk=false}
+ add('Monitoring history readable',historyOk,historyOk?history.length+' saved sampled quote checks; not proof of continuous monitoring':'Saved history could not be parsed');
+ const recent=p&&history.filter(x=>x.symbol===p.symbol).slice(-1)[0];
+ add('Recent monitoring evidence',!p?null:(!recent?null:(Date.now()-Date.parse(recent.time)<120000?true:null)),!p?'No position to monitor':!recent?'No saved checks for this position':('Last saved check: '+recent.time+'; checks occur only while eligible and page is open'));
+ add('Automatic entry authorization',false,'Intentionally disabled: no authenticated unanimous approval or verified executable costs');
+ validationResults.replaceChildren();
+ const summary=document.createElement('p');
+ const passes=results.filter(x=>x.ok===true).length;
+ summary.textContent='Read-only validation at '+new Date().toLocaleString()+': '+passes+' of '+results.length+' checks passed; remaining checks blocked or unverified. No orders submitted.';
+ validationResults.append(summary);
+ results.forEach(x=>{const line=document.createElement('p');line.className='signal-note';line.textContent=(x.ok===true?'PASS':x.ok===false?'BLOCK':'UNVERIFIED')+' — '+x.name+': '+x.detail;validationResults.append(line)});
+}
+validationButton.addEventListener('click',validatePaperState);
 function renderDiagnostics(){
  const p=state.position;
  const cash=Number(state.cash),notional=Number(p?.notional),entry=Number(p?.entry),stop=Number(p?.stop),qty=Number(p?.qty);
