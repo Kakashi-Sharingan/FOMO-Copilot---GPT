@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');
+const e=require('../src/research-engine.js');
+const candles=Array.from({length:70},(_,i)=>({time:1000+i*900000,open:100+i,high:101+i,low:99+i,close:100+i,volume:100,closed:true}));
+assert.equal(e.normalizeCandles([...candles,{...candles[70-1],closed:false}]).length,70);
+assert.equal(e.evaluate(candles).executionAuthorized,false);
+assert.equal(e.evaluate(candles.slice(0,20)).signal,'SKIP');
+assert.equal(e.rsi(Array(20).fill(100)),50);
+assert.equal(e.ema([1,2],10),null);
+assert.equal(e.evaluate(candles.map(x=>({...x,closed:false}))).signal,'SKIP');
+console.log('Research engine smoke checks passed (6 assertions).');
