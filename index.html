@@ -361,8 +361,45 @@ let state;try{state=JSON.parse(localStorage.getItem(key))}catch(_){}
 if(!state||!Number.isFinite(state.cash)||!Array.isArray(state.journal))state=initial();
 if(!Array.isArray(state.blockedDecisions))state.blockedDecisions=[];
 const fee=.001,slip=.001,fmt=n=>String.fromCharCode(36)+Number(n).toFixed(2);
+// Read-only diagnostics: never mutate saved balances, positions, or journals.
+const diagnostic=document.createElement('div');
+diagnostic.id='enginePositionDiagnostics';
+diagnostic.className='paper-metric';
+diagnostic.setAttribute('aria-live','polite');
+diagnostic.style.marginTop='14px';
+diagnostic.style.whiteSpace='pre-line';
+const diagnosticHeading=document.createElement('h3');
+diagnosticHeading.textContent='Saved position & safety diagnostics (read-only)';
+const diagnosticText=document.createElement('p');
+diagnosticText.id='engineDiagnosticText';
+diagnostic.append(diagnosticHeading,diagnosticText);
+$('engineMonitor').after(diagnostic);
+function renderDiagnostics(){
+ const p=state.position;
+ const cash=Number(state.cash),notional=Number(p?.notional),entry=Number(p?.entry),stop=Number(p?.stop),qty=Number(p?.qty);
+ const equityEstimate=cash+(p&&Number.isFinite(notional)?notional:0);
+ const plannedRisk=p&&[notional,entry,stop].every(Number.isFinite)&&entry>0&&stop>0&&stop<entry
+   ?notional*(entry-stop)/entry+notional*2*(fee+slip):NaN;
+ const lines=['Saved available cash: '+(Number.isFinite(cash)?fmt(cash):'UNVERIFIED'),
+ 'Open position: '+(p?String(p.symbol||'UNKNOWN'):'None'),
+ 'Saved journal entries: '+state.journal.length,
+ 'New automatic entries: DISABLED'];
+ if(p){
+   lines.push('Saved entry: '+(Number.isFinite(entry)?entry.toPrecision(8):'UNVERIFIED'),
+   'Saved stop: '+(Number.isFinite(stop)&&stop>0?stop.toPrecision(8):'NOT VERIFIED'),
+   'Saved quantity: '+(Number.isFinite(qty)?qty.toPrecision(8):'UNVERIFIED'),
+   'Saved position notional: '+(Number.isFinite(notional)?fmt(notional):'UNVERIFIED'),
+   'Estimated equity (cash + saved cost notional; NOT live mark-to-market): '+(Number.isFinite(equityEstimate)?fmt(equityEstimate):'UNVERIFIED'),
+   'Illustrative planned stop risk incl. assumed costs: '+(Number.isFinite(plannedRisk)?fmt(plannedRisk):'UNVERIFIED'),
+   '1% of estimated equity: '+(Number.isFinite(equityEstimate)?fmt(Math.max(0,equityEstimate)*.01):'UNVERIFIED'),
+   'Entry gate: BLOCKED while a position is open');
+ }else lines.push('Entry gate: still requires all eight rules and unanimous verified agent approval');
+ diagnosticText.textContent=lines.join('\n');
+}
+
 function save(){try{localStorage.setItem(key,JSON.stringify(state))}catch(_){}}
 function render(){
+ renderDiagnostics();
  if(state.position&&state.position.autoEligible){$('engineAutoExit').checked=true}
  $('engineCash').textContent=fmt(state.cash);
  $('enginePosition').textContent=state.position?state.position.symbol+' · '+state.position.qty.toPrecision(5)+' units':'None';
