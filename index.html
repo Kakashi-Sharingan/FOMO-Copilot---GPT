@@ -722,4 +722,8 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&engine.rea
 window.addEventListener('offline',()=>{if(engine.read().state?.running){engine.stop('Network offline; fail-closed stop');render();}});
 render();
 })();
+</script><section id="fomoReplayPanel" style="max-width:1100px;margin:14px auto;padding:0 22px"><div class="card"><h2>Automatic entry → stop/target replay test</h2><p class="muted">Uses an offline deterministic six-rule research council and synthetic prices. This does NOT claim six independent live-agent approvals. Writes only to the separate observer ledger, never to existing paper positions. Start the monitored observer session above before replaying.</p><div class="row"><button id="fomoReplayRun" type="button">Run synthetic auto-entry + target test</button><button id="fomoReplayStop" type="button">Run synthetic auto-entry + stop test</button></div><p id="fomoReplayResult" role="status">No replay run.</p></div></section><script>
+(function(){const $=id=>document.getElementById(id),e=window.FomoAutoObserver;function run(stop){const candles=Array.from({length:15},(_,i)=>100+i*.08);const a=e.replay(candles);if(!a.entered){$('fomoReplayResult').textContent='Entry not opened: '+(a.error||a.failed?.join(', ')||'blocked')+'. Existing state unchanged.';return;}const p=a.position,b=e.replayExit(stop?p.stop*.999:p.target*1.001);$('fomoReplayResult').textContent=b.ok?'Synthetic auto '+b.trigger+' exit complete. Estimated P/L $'+b.pnl.toFixed(4)+'. Observer cash $'+b.cash.toFixed(2)+'. Reload and export the audit log to inspect both events.':'Exit failed: '+b.error;}
+$('fomoReplayRun').onclick=()=>run(false);$('fomoReplayStop').onclick=()=>run(true);
+})();
 </script></body></html>
