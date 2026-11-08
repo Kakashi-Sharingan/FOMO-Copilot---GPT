@@ -8,7 +8,7 @@
 
 FOMO Copilot is a lightweight, mobile-friendly dashboard for experimenting with trading research without putting real capital at risk. It combines public market data, technical indicator heuristics, a simulated $20 portfolio, risk controls, and a decision journal.
 
-**Project status:** actively developed prototype. Features below describe the included app, not a validated trading strategy.
+**Project status:** paper-only research prototype with a functional browser-local simulation workflow. This is not a validated profitable strategy, production exchange integration, or unattended 24/7 trading service.
 
 ## Features
 
@@ -30,6 +30,20 @@ FOMO Copilot is a lightweight, mobile-friendly dashboard for experimenting with 
 *The link will work only after GitHub Pages has been enabled and deployed for this repository.*
 
 You can also download `index.html` and open it in a modern browser. Public market APIs require internet access and may block local-file requests.
+
+
+## Live-price shadow paper simulation (opt-in)
+
+The **Live-price paper simulation** panel uses public Binance SOL/USDT reference bid/ask quotes and completed five-minute candles. It can open one isolated simulated position per explicitly enabled session, mark that position against sampled quotes, and automatically simulate a stop-loss or take-profit exit while the browser tab is visible and online. No exchange orders are submitted. No original primary or isolated paper-account balances or journals are changed by this feature.
+
+- Starts with a separate fictional $20 shadow ledger in browser localStorage (`fomo_live_shadow_v1`). Its balances are **not** your main paper balance.
+- Simulated entries use deterministic research filters, a shared paper-position gate, a maximum $5 notional, a modeled 1% stop and 2% target, and assumed 0.1% fees and 0.1% adverse slippage each way. These assumptions are not verified exchange execution costs. Six independent live agents are **not** implemented.
+- New entries are limited to 60 checks per session. **An already-open position continues to be monitored beyond 60 checks**, so it is not abandoned at the entry limit. Closing the tab, hiding it, going offline, or a stale quote can pause monitoring and leave a shadow position open; no exchange-side stop exists.
+- An explicit new session can resume monitoring a previously open shadow position. Cumulative realized shadow P/L is not reset when monitoring restarts; loss limits remain in effect for subsequent entries.
+- Exports include up to 120 recent routine price marks and up to 500 important audit events (entry, exit, session control, rejection). Events already pruned by earlier versions cannot be restored. Use **Export live test JSON** and confirm the file appears in browser downloads.
+- Local browser storage can be cleared by browser settings or quota failures; export frequently. Never use browser reset controls as a substitute for closing a simulated position and preserving its audit history.
+
+**Local verification:** run `node tests/smoke.cjs` to exercise the shared paper gate, opt-in entry, rejection, extended position monitoring, audit retention, simulated stop exit, and export without network access. This test is not a live-browser or exchange integration test.
 
 ## Getting started
 
