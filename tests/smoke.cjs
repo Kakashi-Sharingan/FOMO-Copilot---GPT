@@ -6,7 +6,7 @@ const root=require('node:path').resolve(__dirname,'..');
 const storage=new Map();
 const ctx={localStorage:{getItem:k=>storage.has(k)?storage.get(k):null,setItem:(k,v)=>storage.set(k,v)},Date,JSON,Math,Number,console};
 ctx.globalThis=ctx;vm.createContext(ctx);
-for(const file of ['src/shared-paper-gate.js','src/live-shadow.js'])vm.runInContext(fs.readFileSync(require('node:path').join(root,file),'utf8'),ctx,{filename:file});
+for(const file of ['src/local-state.js','src/shared-paper-gate.js','src/live-shadow.js'])vm.runInContext(fs.readFileSync(require('node:path').join(root,file),'utf8'),ctx,{filename:file});
 const gate=ctx.FomoSharedPaperGate,engine=ctx.FomoLiveShadow;
 assert.equal(gate.inspect().allowed,true);
 storage.set('fomo_copilot_paper_v2',JSON.stringify({journal:[],position:{symbol:'SOL'}}));
@@ -17,6 +17,8 @@ assert.equal(engine.setEnabled(true).state.enabled,true);
 const quote=(bid,ask=bid+.01)=>({symbol:'SOLUSDT',unit:'USDT',networkOk:true,receivedAt:Date.now(),bid,ask,spreadBps:2,candleClosedAt:Date.now()-60000,antiPumpVerified:true,momentum:.01,candles:18,source:'mock reference'});
 let s=engine.step(quote(90),{externalClear:false}).state;
 assert.equal(s.position,null);
+s=engine.step({...quote(90),candleClosedAt:Date.now()+60000},{externalClear:true}).state;
+assert.equal(s.position,null,'future candle must not authorize entry');
 s=engine.step(quote(90),{externalClear:true}).state;
 assert.ok(s.position);
 assert.equal(storage.has('fomo_copilot_paper_v2'),false);
@@ -34,3 +36,10 @@ assert.equal(JSON.parse(engine.exportJSON().json).shadow.cash,balance);
 engine.setEnabled(true);
 assert.ok(engine.read().state.realized<0,'realized loss must persist across sessions');
 console.log('PASS: ledger gate, opt-in, rejection, entry, >60 monitoring, audit retention, stop exit, cash, export, loss persistence');
+
+assert.equal(ctx.FomoLocalState.validResearch({schema:1,decisions:[],lessons:[null]}),false);
+assert.equal(ctx.FomoLocalState.validPrimary({balance:'20',journal:[],position:null}),false);
+console.log('PASS: future-candle rejection and saved-state schema validation');
+
+const corrupt={...engine.read().state,realized:null};storage.set('fomo_live_shadow_v1',JSON.stringify(corrupt));assert.ok(engine.read().error);assert.equal(JSON.parse(storage.get('fomo_live_shadow_v1')).realized,null,'invalid saved shadow data is preserved');
+console.log('PASS: malformed live-shadow loss data fails closed without overwriting it');
