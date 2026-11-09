@@ -1,0 +1,10 @@
+{
+  "name": "fomo-copilot",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node --test tests/research-engine.test.cjs tests/smoke.cjs",
+    "test:browser": "node --test tests/dashboard.browser.cjs"
+  },
+  "devDependencies": {"playwright": "1.58.2"}
+}

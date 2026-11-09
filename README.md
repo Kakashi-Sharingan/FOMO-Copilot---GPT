@@ -120,3 +120,28 @@ FOMO Copilot is an independent educational prototype and is **not affiliated wit
 ## License
 
 **No license has been selected yet.** Until the repository owner chooses one, standard copyright rules apply. Contributors should not assume permission to reuse or redistribute the code outside GitHub's applicable terms.
+## Dashboard interface and regression checks
+
+The charcoal dashboard uses sidebar views for Overview, Markets, Agent desk,
+Paper portfolio, Strategy lab and System health. Overview metrics mirror the
+primary ledger; they never combine separate paper accounts. The presentation
+shell moves the existing controls without replacing their handlers or storage.
+Old section bookmarks, reloads and browser Back/Forward remain supported.
+
+Run the dependency-free research and simulation checks with `npm test`.
+For the Chromium interaction suite:
+
+```sh
+npm ci
+npx playwright install chromium
+npm run test:browser
+```
+
+If Chromium is already installed, set `CHROMIUM_PATH` to its executable path.
+Browser tests serve the app locally, use fresh isolated browser contexts, and
+intercept provider requests with deterministic test quotes and candles. They do
+not exercise production provider availability or change a user's saved accounts.
+The suite covers navigation/history, stop and target paper exits, persisted
+journals, cross-ledger and daily-loss gates, JSON/CSV downloads, import validation,
+read-only research/health, offline/stale data, shadow simulations and responsive
+layouts from 320px to 1440px. Screenshots are written to ignored `test-results/`.
