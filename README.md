@@ -145,3 +145,24 @@ The suite covers navigation/history, stop and target paper exits, persisted
 journals, cross-ledger and daily-loss gates, JSON/CSV downloads, import validation,
 read-only research/health, offline/stale data, shadow simulations and responsive
 layouts from 320px to 1440px. Screenshots are written to ignored `test-results/`.
+
+Run `npm run test:live` for the separate **live-provider browser test**. It opens
+GitHub Pages in a fresh isolated browser context, uses real CoinGecko/Binance
+responses without request interception, exercises a primary paper entry and
+confirmed manual close, downloads journals, runs research/observer checks, pauses
+the opt-in shadow test, and checks desktop/mobile layouts. It never connects a
+wallet or submits exchange orders, and does not touch another browser's data.
+`FOMO_TEST_URL` can target a local server instead. Set `CHROMIUM_PATH` when using
+an installed Chromium binary. In managed networks, use the supplied HTTPS proxy
+and configure the supplied CA in Chromium's trust store; do not disable TLS checks.
+Results and screenshots go into ignored `test-results/`.
+
+Research imports now validate every journal row before replacing saved data.
+Invalid saved primary data is preserved and shown as unavailable, rather than
+replaced with a displayed $20 balance. Primary and isolated paper mutations reload
+current saved state and use a shared Web Lock in supported modern browsers;
+other tabs update their displayed accounts from storage events. Storage write
+failures are reported without presenting an unsaved trade as completed. Cached
+USD prices are invalidated after a USD feed failure. Technical candles and scanner
+rankings older than 45 minutes are rejected, and future-dated shadow candles
+cannot authorize an entry.
